@@ -106,7 +106,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			if (lpszMessage) {
 				GetWindowText(hEdit1, lpszMessage, nSize + 1);
 				LPWSTR lpszReturn = openai(lpszMessage);
-				{
+				if (lpszReturn) {
 					SetWindowText(hEdit2, 0);
 					WCHAR seps[] = L"\n";
 					LPWSTR token = wcstok(lpszReturn, seps);
@@ -116,8 +116,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 						SendMessage(hEdit2, EM_REPLACESEL, 0, (LPARAM)L"\r\n");
 						token = wcstok(NULL, seps);
 					}
+					GlobalFree(lpszReturn);
 				}
-				GlobalFree(lpszReturn);
+				else {
+					SetWindowText(hEdit2, L"エラー");
+				}
 				GlobalFree(lpszMessage);
 			}
 		}
