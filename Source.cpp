@@ -39,26 +39,27 @@ LPWSTR openai(IN LPCWSTR lpszMessage)
 			const HINTERNET hRequest = HttpOpenRequestW(hConnection, L"POST", L"/v1/completions", 0, 0, 0, INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
 			if (hRequest)
 			{
-				WCHAR szHeaders[1024] = L"";
+				WCHAR szHeaders[1024];
 				wsprintf(szHeaders, L"Content-Type: application/json\r\nAuthorization: Bearer %s", szAPIKey);
 				std::string body_json = "{\"model\":\"text-davinci-003\", \"prompt\":\"";
 				LPSTR lpszMessageA = w2a(lpszMessage);
 				body_json += lpszMessageA;
 				body_json += "\", \"temperature\": 0, \"max_tokens\": 1000}";
 				GlobalFree(lpszMessageA);
-				HttpSendRequestW(hRequest, szHeaders, lstrlenW(szHeaders), (LPVOID)(body_json.c_str()), body_json.length());
+				HttpSendRequestW(hRequest, szHeaders, lstrlenW(szHeaders), (LPVOID)(body_json.c_str()), (DWORD)body_json.length());
 				lpszByte = (LPBYTE)GlobalAlloc(GMEM_FIXED, 1);
-				DWORD dwRead;
-				BYTE szBuf[1024 * 4];
-				LPBYTE lpTmp;
-				for (;;)
-				{
-					if (!InternetReadFile(hRequest, szBuf, (DWORD)sizeof(szBuf), &dwRead) || !dwRead) break;
-					lpTmp = (LPBYTE)GlobalReAlloc(lpszByte, (SIZE_T)(dwSize + dwRead), GMEM_MOVEABLE);
-					if (lpTmp == NULL) break;
-					lpszByte = lpTmp;
-					CopyMemory(lpszByte + dwSize, szBuf, dwRead);
-					dwSize += dwRead;
+				if (lpszByte) {
+					DWORD dwRead;
+					BYTE szBuf[1024 * 4];
+					for (;;)
+					{
+						if (!InternetReadFile(hRequest, szBuf, (DWORD)sizeof(szBuf), &dwRead) || !dwRead) break;
+						LPBYTE lpTmp = (LPBYTE)GlobalReAlloc(lpszByte, (SIZE_T)(dwSize + dwRead), GMEM_MOVEABLE);
+						if (lpTmp == NULL) break;
+						lpszByte = lpTmp;
+						CopyMemory(lpszByte + dwSize, szBuf, dwRead);
+						dwSize += dwRead;
+					}
 				}
 				InternetCloseHandle(hRequest);
 			}
@@ -74,11 +75,15 @@ LPWSTR openai(IN LPCWSTR lpszMessage)
 		std::string err;
 		json11::Json v = json11::Json::parse(src, err);
 		for (auto& item : v["choices"].array_items()) {
-			LPWSTR lpszText;
 			return a2w(item["text"].string_value().c_str());
 		}
 	}
-	return 0;
+	LPCWSTR lpszErrorMessage = L"エラーとなりました。しばらくたってからリトライしてください。";
+	LPWSTR lpszReturn  = (LPWSTR)GlobalAlloc(0, sizeof(WCHAR) * (lstrlenW(lpszErrorMessage) + 1));
+	if (lpszReturn) {
+		lstrcpy(lpszReturn, lpszErrorMessage);
+	}
+	return lpszReturn;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -101,6 +106,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	case WM_COMMAND:
 		if (LOWORD(wParam) == IDOK)
 		{
+			EnableWindow(hButton, FALSE);
 			INT nSize = GetWindowTextLength(hEdit1);
 			LPWSTR lpszMessage = (LPWSTR)GlobalAlloc(0, sizeof(WCHAR) * (nSize + 1));
 			if (lpszMessage) {
@@ -109,12 +115,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				if (lpszReturn) {
 					SetWindowText(hEdit2, 0);
 					WCHAR seps[] = L"\n";
-					LPWSTR token = wcstok(lpszReturn, seps);
+					WCHAR* context;
+					LPWSTR token = wcstok_s(lpszReturn, seps, &context);
 					while (token != NULL)
 					{
 						SendMessage(hEdit2, EM_REPLACESEL, 0, (LPARAM)token);
 						SendMessage(hEdit2, EM_REPLACESEL, 0, (LPARAM)L"\r\n");
-						token = wcstok(NULL, seps);
+						token = wcstok_s(NULL, seps, &context);
 					}
 					GlobalFree(lpszReturn);
 				}
@@ -123,6 +130,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 				}
 				GlobalFree(lpszMessage);
 			}
+			EnableWindow(hButton, TRUE);
 		}
 		break;
 	case WM_CLOSE:
